@@ -1,0 +1,56 @@
+[
+  {
+    "codigo": 2,
+    "codigoPorcentaje": 0,
+    "tarifa": 0,
+    "descripción": "0%"
+  },
+  {
+    "codigo": 2,
+    "codigoPorcentaje": 2,
+    "tarifa": 0.12,
+    "descripción": "12%"
+  },
+  {
+    "codigo": 2,
+    "codigoPorcentaje": 3,
+    "tarifa": 0.14,
+    "descripción": "14%"
+  },
+  {
+    "codigo": 2,
+    "codigoPorcentaje": 4,
+    "tarifa": 0.15,
+    "descripción": "15%"
+  },
+  {
+    "codigo": 2,
+    "codigoPorcentaje": 5,
+    "tarifa": 0.05,
+    "descripción": "05%"
+  },
+  {
+    "codigo": 2,
+    "codigoPorcentaje": 6,
+    "tarifa": 0,
+    "descripción": "No objeto de impuesto"
+  },
+  {
+    "codigo": 2,
+    "codigoPorcentaje": 7,
+    "tarifa": 0,
+    "descripción": "Exento de IVA"
+  },
+  {
+    "codigo": 2,
+    "codigoPorcentaje": 8,
+    "tarifa": 8,
+    "descripción": "IVA diferenciado"
+  },
+  {
+    "codigo": 2,
+    "codigoPorcentaje": 10,
+    "tarifa": 0.13,
+    "descripción": "13%"
+  }
+]
