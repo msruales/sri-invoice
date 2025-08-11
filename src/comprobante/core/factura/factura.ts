@@ -69,12 +69,12 @@ export class Factura extends ComprobanteElectronico {
       return preciseCalculation(acc + Number(pago.total));
     }, 0);
     const importeTotal = preciseCalculation(Number(this.importeTotal));
-    
+
     // Tolerancia para diferencias de redondeo muy pequeñas (hasta 0.01)
     const diferencia = Math.abs(importeTotal - totalPago);
     const tolerancia = 0.01;
-    
-    if (diferencia > tolerancia) {
+
+    if (diferencia >= tolerancia) {
       throw new Error(`El pago (${totalPago}) no coincide con el importe total (${importeTotal}). Diferencia: ${diferencia.toFixed(4)}`);
     }
   }
