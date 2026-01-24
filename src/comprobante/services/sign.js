@@ -120,7 +120,59 @@ async function sign(p12Path, p12Password, xmlIn) {
     pkcs8 = PKCS8BAGS[forge.oids.pkcs8ShroudedKeyBag][0];
   }
 
+  // Soporte para FirmaEC (ANFAC Ecuador)
+  if (/FIRMAEC|ANFAC|ANF.*ECUADOR/i.test(FRIENDLYNAME)) {
+    const keys = PKCS8BAGS[forge.oids.pkcs8ShroudedKeyBag];
+    // FirmaEC puede tener múltiples claves, buscar la de firma
+    if (keys.length === 1) {
+      pkcs8 = keys[0];
+    } else {
+      // Buscar clave de firma por friendlyName
+      for (let i = 0; i < keys.length; i++) {
+        const element = keys[i];
+        const friendlyName = element.attributes?.friendlyName?.[0] || '';
+        if (/sign|firma/i.test(friendlyName)) {
+          pkcs8 = keys[i];
+          break;
+        }
+      }
+      // Si no encuentra clave específica de firma, usar la primera
+      if (!pkcs8) {
+        pkcs8 = keys[0];
+      }
+    }
+  }
+
+  // Soporte para Uanataca
+  if (/UANATACA/i.test(FRIENDLYNAME)) {
+    const keys = PKCS8BAGS[forge.oids.pkcs8ShroudedKeyBag];
+    if (keys.length === 1) {
+      pkcs8 = keys[0];
+    } else {
+      // Buscar clave de firma por friendlyName
+      for (let i = 0; i < keys.length; i++) {
+        const element = keys[i];
+        const friendlyName = element.attributes?.friendlyName?.[0] || '';
+        if (/sign|firma/i.test(friendlyName)) {
+          pkcs8 = keys[i];
+          break;
+        }
+      }
+      if (!pkcs8) {
+        pkcs8 = keys[0];
+      }
+    }
+  }
+
   certificate = cert.cert;
+
+  // Validar que se encontró la clave privada
+  if (!pkcs8) {
+    throw new Error(
+      `Certificado no reconocido. Emisor: "${FRIENDLYNAME}". ` +
+      'Certificados soportados: Security Data, Banco Central, FirmaEC (ANFAC), Uanataca.'
+    );
+  }
 
   const notBefore = certificate.validity['notBefore'];
   const notAfter = certificate.validity['notAfter'];
@@ -128,7 +180,7 @@ async function sign(p12Path, p12Password, xmlIn) {
   const currentDate = new Date();
 
   if (currentDate < notBefore || currentDate > notAfter) {
-    throw new Error('Invalid certificatem certificate has expired');
+    throw new Error('Certificado inválido: el certificado ha expirado');
   }
 
   const key = pkcs8.key ?? pkcs8.asn1;
