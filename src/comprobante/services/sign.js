@@ -208,7 +208,7 @@ async function sign(p12Path, p12Password, xmlIn) {
 
   SignedProperties += '<etsi:SignedDataObjectProperties>';
   SignedProperties +=
-    '<etsi:DataObjectFormat ObjectReference="#Reference-ID=' +
+    '<etsi:DataObjectFormat ObjectReference="#Reference-ID-' +
     Reference_ID_number +
     '">';
   SignedProperties += '<etsi:Description>';
