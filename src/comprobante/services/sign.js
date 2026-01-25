@@ -83,14 +83,22 @@ async function sign(p12Path, p12Password, xmlIn) {
 
   const CERTBAG = CERTBAGS[forge.oids.certBag];
 
-  const FRIENDLYNAME = CERTBAG[1].attributes.friendlyName[0];
+  // DEBUG: Información del certificado
+  console.log('=== DEBUG CERTIFICADO ===');
+  console.log('Cantidad de certificados en CERTBAG:', CERTBAG?.length);
+
+  // DEBUG: Mostrar attributes de cada bag
+  CERTBAG?.forEach((bag, index) => {
+    console.log(`CERTBAG[${index}] attributes:`, JSON.stringify(bag.attributes, null, 2));
+    console.log(`CERTBAG[${index}] cert.subject:`, bag.cert?.subject?.attributes?.map(a => `${a.shortName}=${a.value}`).join(', '));
+    console.log(`CERTBAG[${index}] cert.issuer:`, bag.cert?.issuer?.attributes?.map(a => `${a.shortName}=${a.value}`).join(', '));
+  });
 
   let certificate;
   let pkcs8;
   let issuerName = '';
 
   const cert = CERTBAG.reduce((prev, curr) => {
-    // const attributes = curr.cert.extensions;
     return curr.cert.extensions.length > prev.cert.extensions.length ?
       curr :
       prev;
@@ -98,11 +106,49 @@ async function sign(p12Path, p12Password, xmlIn) {
   const issuerAttrs = cert.cert.issuer.attributes;
 
   issuerName = issuerAttrs
+    .slice() // Copiar para no mutar el original
     .reverse()
     .map((attr) => {
       return `${attr.shortName}=${attr.value}`;
     })
     .join(', ');
+
+  console.log('issuerName:', issuerName);
+
+  // Obtener identificador del emisor de múltiples fuentes
+  let FRIENDLYNAME = '';
+
+  // 1. Intentar desde attributes.friendlyName del certBag
+  for (const bag of CERTBAG) {
+    if (bag.attributes?.friendlyName?.[0]) {
+      FRIENDLYNAME = bag.attributes.friendlyName[0];
+      console.log('friendlyName encontrado en bag.attributes:', FRIENDLYNAME);
+      break;
+    }
+  }
+
+  // 2. Si no hay friendlyName, usar el issuerName del certificado
+  if (!FRIENDLYNAME) {
+    FRIENDLYNAME = issuerName;
+    console.log('Usando issuerName como FRIENDLYNAME:', FRIENDLYNAME);
+  }
+
+  // 3. También revisar el subject del certificado
+  if (!FRIENDLYNAME) {
+    const subjectAttrs = cert.cert.subject.attributes;
+    FRIENDLYNAME = subjectAttrs.map(attr => attr.value).join(' ');
+    console.log('Usando subject como FRIENDLYNAME:', FRIENDLYNAME);
+  }
+
+  console.log('FRIENDLYNAME final:', FRIENDLYNAME);
+
+  // DEBUG: Mostrar claves disponibles
+  const keys = PKCS8BAGS[forge.oids.pkcs8ShroudedKeyBag];
+  console.log('Cantidad de claves en PKCS8BAGS:', keys?.length);
+  keys?.forEach((key, index) => {
+    console.log(`Key[${index}] friendlyName:`, key.attributes?.friendlyName?.[0]);
+  });
+  console.log('=== FIN DEBUG ===');
 
   if (/BANCO CENTRAL/i.test(FRIENDLYNAME)) {
     const keys = PKCS8BAGS[forge.oids.pkcs8ShroudedKeyBag];
