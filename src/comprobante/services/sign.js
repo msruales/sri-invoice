@@ -636,8 +636,15 @@ function extractX509Data(certificate) {
 }
 
 function extractPrivateKeyData(privateKey) {
-  const modulus = Buffer.from(privateKey.n.toString(16), 'hex').toString('base64');
-  const exponent = Buffer.from(privateKey.e.toString(16), 'hex').toString('base64');
+  let modulusHex = privateKey.n.toString(16);
+  let exponentHex = privateKey.e.toString(16);
+
+  // Pad to even length (required for proper hex-to-bytes conversion)
+  if (modulusHex.length % 2 !== 0) modulusHex = '0' + modulusHex;
+  if (exponentHex.length % 2 !== 0) exponentHex = '0' + exponentHex;
+
+  const modulus = Buffer.from(modulusHex, 'hex').toString('base64');
+  const exponent = Buffer.from(exponentHex, 'hex').toString('base64');
   return { modulus, exponent };
 }
 
