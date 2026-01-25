@@ -1,6 +1,7 @@
 import * as forge from 'node-forge';
 import { readFileSync } from 'fs';
 import * as https from 'node:https';
+import * as crypto from 'crypto';
 
 const httpsAgent = new https.Agent({
   family: 4,
@@ -30,12 +31,28 @@ export function getP12FromLocalFile(path) {
   return buffer;
 }
 
+// ============================================
+// Funciones auxiliares comunes
+// ============================================
+
 function sha1_base64(txt, encoding) {
   const md = forge.md.sha1.create();
   md.update(txt, encoding);
   const HASH = md.digest().toHex();
   const BUFFER = Buffer.from(HASH, 'hex');
   return BUFFER.toString('base64');
+}
+
+function sha256_base64(txt, encoding) {
+  const md = forge.md.sha256.create();
+  md.update(txt, encoding);
+  const HASH = md.digest().toHex();
+  const BUFFER = Buffer.from(HASH, 'hex');
+  return BUFFER.toString('base64');
+}
+
+function generateUUID() {
+  return crypto.randomUUID();
 }
 
 function hexToBase64(hexStr) {
@@ -57,82 +74,83 @@ function getRandomNumber(min = 990, max = 9999) {
   return Math.floor(Math.random() * (max - min + 1) + min);
 }
 
-async function sign(p12Path, p12Password, xmlIn) {
-  const ARRAYBUFFER = await getP12FromUrl(p12Path);
-  let xml = xmlIn;
-
-  xml = xml
-    .replace(/\s+/g, ' ') // Reemplazar múltiples espacios en blanco por un solo espacio
-    .trim() // Eliminar espacios al principio y al final
-    .replace(/(?<=>)(\r?\n)|(\r?\n)(?=<\/)/g, '') // Eliminar saltos de línea entre etiquetas
-    .trim() // Volver a eliminar espacios
+function normalizeXml(xml) {
+  return xml
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/(?<=>)(\r?\n)|(\r?\n)(?=<\/)/g, '')
+    .trim()
     .replace(/(?<=>)(\s*)/g, '');
+}
 
-  const ARRAYUINT8 = new Uint8Array(ARRAYBUFFER);
-  const DER = forge.util.decode64(forge.util.binary.base64.encode(ARRAYUINT8));
-  const ASN1 = forge.asn1.fromDer(DER);
-  const P12 = forge.pkcs12.pkcs12FromAsn1(ASN1, p12Password);
+function extractP12Data(arrayBuffer, password) {
+  const arrayUint8 = new Uint8Array(arrayBuffer);
+  const der = forge.util.decode64(forge.util.binary.base64.encode(arrayUint8));
+  const asn1 = forge.asn1.fromDer(der);
+  const p12 = forge.pkcs12.pkcs12FromAsn1(asn1, password);
 
-  const PKCS8BAGS = P12.getBags({
+  const pkcs8Bags = p12.getBags({
     bagType: forge.pki.oids.pkcs8ShroudedKeyBag,
   });
 
-  const CERTBAGS = P12.getBags({
+  const certBags = p12.getBags({
     bagType: forge.pki.oids.certBag,
   });
 
-  const CERTBAG = CERTBAGS[forge.oids.certBag];
+  const certBag = certBags[forge.oids.certBag];
+  const friendlyName = certBag[1]?.attributes?.friendlyName?.[0] || '';
 
-  const FRIENDLYNAME = CERTBAG[1].attributes.friendlyName[0];
-
-  let certificate;
-  let pkcs8;
-  let issuerName = '';
-
-  const cert = CERTBAG.reduce((prev, curr) => {
-    // const attributes = curr.cert.extensions;
+  const cert = certBag.reduce((prev, curr) => {
     return curr.cert.extensions.length > prev.cert.extensions.length ?
       curr :
       prev;
   });
+
   const issuerAttrs = cert.cert.issuer.attributes;
 
-  issuerName = issuerAttrs
-    .reverse()
-    .map((attr) => {
-      return `${attr.shortName}=${attr.value}`;
-    })
-    .join(', ');
+  return {
+    p12,
+    pkcs8Bags,
+    certBag,
+    cert,
+    friendlyName,
+    issuerAttrs,
+    certificate: cert.cert,
+  };
+}
 
-  if (/BANCO CENTRAL/i.test(FRIENDLYNAME)) {
-    const keys = PKCS8BAGS[forge.oids.pkcs8ShroudedKeyBag];
-
-    for (let i = 0; i < keys.length; i++) {
-      const element = keys[i];
-      const friendlyName = element.attributes.friendlyName[0];
-      if (/Signing Key/i.test(friendlyName)) {
-        pkcs8 = PKCS8BAGS[forge.oids.pkcs8ShroudedKeyBag][i];
-      }
-    }
+function detectProvider(friendlyName, issuerAttrs) {
+  // Detectar por friendlyName
+  if (/BANCO CENTRAL/i.test(friendlyName)) {
+    return 'BANCO_CENTRAL';
+  }
+  if (/SECURITY DATA/i.test(friendlyName)) {
+    return 'SECURITY_DATA';
   }
 
-  if (/SECURITY DATA/i.test(FRIENDLYNAME)) {
-    pkcs8 = PKCS8BAGS[forge.oids.pkcs8ShroudedKeyBag][0];
+  // Detectar por issuerName (para Uanataca)
+  const issuerString = issuerAttrs.map(attr => attr.value).join(' ');
+  if (/UANATACA/i.test(issuerString)) {
+    return 'UANATACA';
   }
 
-  certificate = cert.cert;
+  // Default: intentar con Security Data (comportamiento más común)
+  return 'SECURITY_DATA';
+}
 
+function validateCertificate(certificate) {
   const notBefore = certificate.validity['notBefore'];
   const notAfter = certificate.validity['notAfter'];
-
   const currentDate = new Date();
 
   if (currentDate < notBefore || currentDate > notAfter) {
-    throw new Error('Invalid certificatem certificate has expired');
+    throw new Error('Invalid certificate, certificate has expired');
   }
 
-  const key = pkcs8.key ?? pkcs8.asn1;
+  return currentDate;
+}
 
+function prepareCertificateData(certificate, key) {
   const certificateX509_pem = forge.pki.certificateToPem(certificate);
 
   let certificateX509 = certificateX509_pem.substring(
@@ -141,16 +159,58 @@ async function sign(p12Path, p12Password, xmlIn) {
   );
 
   certificateX509 = certificateX509
-    .replace(/\r?\n|\r/g, '') // Elimina todos los saltos de línea y retornos de carro
-    .replace(/([^\0]{76})/g, '$1\n'); // Inserta un salto de línea cada 76 caracteres
+    .replace(/\r?\n|\r/g, '')
+    .replace(/([^\0]{76})/g, '$1\n');
 
   const certificateX509_asn1 = forge.pki.certificateToAsn1(certificate);
   const certificateX509_der = forge.asn1.toDer(certificateX509_asn1).getBytes();
-  const hash_certificateX509_der = sha1_base64(certificateX509_der);
   const certificateX509_serialNumber = BigInt('0x' + certificate.serialNumber).toString();
 
   const exponent = hexToBase64(key.e.data[0].toString(16));
   const modules = bigIntToBase64(key.n);
+
+  return {
+    certificateX509,
+    certificateX509_der,
+    certificateX509_serialNumber,
+    exponent,
+    modules,
+  };
+}
+
+// ============================================
+// Lógica de firma para Security Data / Banco Central
+// ============================================
+
+function _signStandard(xml, p12Data, provider) {
+  const { pkcs8Bags, cert, issuerAttrs, certificate } = p12Data;
+
+  let pkcs8;
+
+  if (provider === 'BANCO_CENTRAL') {
+    const keys = pkcs8Bags[forge.oids.pkcs8ShroudedKeyBag];
+    for (let i = 0; i < keys.length; i++) {
+      const element = keys[i];
+      const friendlyName = element.attributes.friendlyName[0];
+      if (/Signing Key/i.test(friendlyName)) {
+        pkcs8 = pkcs8Bags[forge.oids.pkcs8ShroudedKeyBag][i];
+      }
+    }
+  } else {
+    // SECURITY_DATA
+    pkcs8 = pkcs8Bags[forge.oids.pkcs8ShroudedKeyBag][0];
+  }
+
+  const currentDate = validateCertificate(certificate);
+  const key = pkcs8.key ?? pkcs8.asn1;
+
+  const issuerName = [...issuerAttrs]
+    .reverse()
+    .map((attr) => `${attr.shortName}=${attr.value}`)
+    .join(', ');
+
+  const certData = prepareCertificateData(certificate, key);
+  const hash_certificateX509_der = sha1_base64(certData.certificateX509_der);
 
   xml = xml.replace(/\t|\r/g, '');
 
@@ -199,7 +259,7 @@ async function sign(p12Path, p12Password, xmlIn) {
   SignedProperties += issuerName;
   SignedProperties += '</ds:X509IssuerName>';
   SignedProperties += '<ds:X509SerialNumber>';
-  SignedProperties += certificateX509_serialNumber;
+  SignedProperties += certData.certificateX509_serialNumber;
   SignedProperties += '</ds:X509SerialNumber>';
   SignedProperties += '</etsi:IssuerSerial>';
   SignedProperties += '</etsi:Cert>';
@@ -232,16 +292,16 @@ async function sign(p12Path, p12Password, xmlIn) {
   KeyInfo += '<ds:KeyInfo Id="Certificate' + Certificate_number + '">';
   KeyInfo += '\n<ds:X509Data>';
   KeyInfo += '\n<ds:X509Certificate>\n';
-  KeyInfo += certificateX509;
+  KeyInfo += certData.certificateX509;
   KeyInfo += '\n</ds:X509Certificate>';
   KeyInfo += '\n</ds:X509Data>';
   KeyInfo += '\n<ds:KeyValue>';
   KeyInfo += '\n<ds:RSAKeyValue>';
   KeyInfo += '\n<ds:Modulus>\n';
-  KeyInfo += modules;
+  KeyInfo += certData.modules;
   KeyInfo += '\n</ds:Modulus>';
   KeyInfo += '\n<ds:Exponent>\n';
-  KeyInfo += exponent;
+  KeyInfo += certData.exponent;
   KeyInfo += '\n</ds:Exponent>';
   KeyInfo += '\n</ds:RSAKeyValue>';
   KeyInfo += '\n</ds:KeyValue>';
@@ -281,7 +341,7 @@ async function sign(p12Path, p12Password, xmlIn) {
   SignedInfo += '</ds:DigestMethod>';
   SignedInfo += '\n<ds:DigestValue>';
   SignedInfo += sha1_KeyInfo;
-  SignedInfo += '\n</ds:DigestValue>';
+  SignedInfo += '</ds:DigestValue>';
   SignedInfo += '\n</ds:Reference>';
   SignedInfo +=
     '\n<ds:Reference Id="Reference-ID-' +
@@ -337,4 +397,204 @@ async function sign(p12Path, p12Password, xmlIn) {
   return xml.replace(/(<[^<]+)$/, xades_bes + '$1');
 }
 
-export { sign };
+// ============================================
+// Lógica de firma para Uanataca
+// ============================================
+
+function _signUanataca(xml, p12Data) {
+  const { pkcs8Bags, cert, issuerAttrs, certificate } = p12Data;
+
+  // Para Uanataca usar la primera clave disponible
+  const pkcs8 = pkcs8Bags[forge.oids.pkcs8ShroudedKeyBag][0];
+
+  const currentDate = validateCertificate(certificate);
+  const key = pkcs8.key ?? pkcs8.asn1;
+
+  // Formatear issuerName para Uanataca con OID.2.5.4.97
+  const issuerName = [...issuerAttrs]
+    .reverse()
+    .map((attr) => {
+      if (attr.type === '2.5.4.97') {
+        return `OID.2.5.4.97=${attr.value}`;
+      }
+      return `${attr.shortName}=${attr.value}`;
+    })
+    .join(', ');
+
+  const certData = prepareCertificateData(certificate, key);
+  const hash_certificateX509_der = sha256_base64(certData.certificateX509_der);
+
+  xml = xml.replace(/\t|\r/g, '');
+
+  const sha256_xml = sha256_base64(
+    xml.replace('<?xml version="1.0" encoding="UTF-8"?>', ''),
+    'utf8',
+  );
+
+  const namespaces =
+    'xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:xades="http://uri.etsi.org/01903/v1.3.2#"';
+
+  // Generar UUIDs para Uanataca
+  const signatureUUID = generateUUID();
+  const referenceUUID = generateUUID();
+  const objectUUID = generateUUID();
+  const qualifyingPropertiesUUID = generateUUID();
+
+  // Fecha con zona horaria para Ecuador (-05:00)
+  const tzOffset = -5;
+  const tzString = tzOffset < 0 ? `-0${Math.abs(tzOffset)}:00` : `+0${tzOffset}:00`;
+  const isoDateTime = currentDate.toISOString().slice(0, 19) + tzString;
+
+  let SignedProperties = '';
+  SignedProperties += `<xades:SignedProperties Id="SignedProperties-Signature-${signatureUUID}">`;
+  SignedProperties += '<xades:SignedSignatureProperties>';
+  SignedProperties += '<xades:SigningTime>';
+  SignedProperties += isoDateTime;
+  SignedProperties += '</xades:SigningTime>';
+  SignedProperties += '<xades:SigningCertificate>';
+  SignedProperties += '<xades:Cert>';
+  SignedProperties += '<xades:CertDigest>';
+  SignedProperties += '<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" />';
+  SignedProperties += '<ds:DigestValue>';
+  SignedProperties += hash_certificateX509_der;
+  SignedProperties += '</ds:DigestValue>';
+  SignedProperties += '</xades:CertDigest>';
+  SignedProperties += '<xades:IssuerSerial>';
+  SignedProperties += '<ds:X509IssuerName>';
+  SignedProperties += issuerName;
+  SignedProperties += '</ds:X509IssuerName>';
+  SignedProperties += '<ds:X509SerialNumber>';
+  SignedProperties += certData.certificateX509_serialNumber;
+  SignedProperties += '</ds:X509SerialNumber>';
+  SignedProperties += '</xades:IssuerSerial>';
+  SignedProperties += '</xades:Cert>';
+  SignedProperties += '</xades:SigningCertificate>';
+  SignedProperties += '</xades:SignedSignatureProperties>';
+
+  SignedProperties += '<xades:SignedDataObjectProperties>';
+  SignedProperties += `<xades:DataObjectFormat ObjectReference="#Reference-${referenceUUID}">`;
+  SignedProperties += '<xades:MimeType>';
+  SignedProperties += 'text/xml';
+  SignedProperties += '</xades:MimeType>';
+  SignedProperties += '<xades:Encoding>';
+  SignedProperties += 'UTF-8';
+  SignedProperties += '</xades:Encoding>';
+  SignedProperties += '</xades:DataObjectFormat>';
+  SignedProperties += '</xades:SignedDataObjectProperties>';
+  SignedProperties += '</xades:SignedProperties>';
+
+  const sha256_SignedProperties = sha256_base64(
+    SignedProperties.replace(
+      '<xades:SignedProperties',
+      '<xades:SignedProperties ' + namespaces,
+    ),
+  );
+
+  let KeyInfo = '';
+  KeyInfo += `<ds:KeyInfo Id="KeyInfoId-Signature-${signatureUUID}">`;
+  KeyInfo += '<ds:X509Data>';
+  KeyInfo += '<ds:X509Certificate>';
+  KeyInfo += certData.certificateX509.replace(/\n/g, '');
+  KeyInfo += '</ds:X509Certificate>';
+  KeyInfo += '</ds:X509Data>';
+  KeyInfo += '<ds:KeyValue>';
+  KeyInfo += '<ds:RSAKeyValue>';
+  KeyInfo += '<ds:Modulus>';
+  KeyInfo += certData.modules.replace(/\n/g, '');
+  KeyInfo += '</ds:Modulus>';
+  KeyInfo += '<ds:Exponent>';
+  KeyInfo += certData.exponent;
+  KeyInfo += '</ds:Exponent>';
+  KeyInfo += '</ds:RSAKeyValue>';
+  KeyInfo += '</ds:KeyValue>';
+  KeyInfo += '</ds:KeyInfo>';
+
+  const sha256_KeyInfo = sha256_base64(
+    KeyInfo.replace('<ds:KeyInfo', '<ds:KeyInfo ' + namespaces),
+  );
+
+  let SignedInfo = '';
+  SignedInfo += '<ds:SignedInfo>';
+  SignedInfo += '<ds:CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315" />';
+  SignedInfo += '<ds:SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1" />';
+  SignedInfo += `<ds:Reference Id="Reference-${referenceUUID}" URI="#comprobante">`;
+  SignedInfo += '<ds:Transforms>';
+  SignedInfo += '<ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature" />';
+  SignedInfo += '</ds:Transforms>';
+  SignedInfo += '<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" />';
+  SignedInfo += '<ds:DigestValue>';
+  SignedInfo += sha256_xml;
+  SignedInfo += '</ds:DigestValue>';
+  SignedInfo += '</ds:Reference>';
+  SignedInfo += `<ds:Reference Id="ReferenceKeyInfo" URI="#KeyInfoId-Signature-${signatureUUID}">`;
+  SignedInfo += '<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" />';
+  SignedInfo += '<ds:DigestValue>';
+  SignedInfo += sha256_KeyInfo;
+  SignedInfo += '</ds:DigestValue>';
+  SignedInfo += '</ds:Reference>';
+  SignedInfo += `<ds:Reference Type="http://uri.etsi.org/01903#SignedProperties" URI="#SignedProperties-Signature-${signatureUUID}">`;
+  SignedInfo += '<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" />';
+  SignedInfo += '<ds:DigestValue>';
+  SignedInfo += sha256_SignedProperties;
+  SignedInfo += '</ds:DigestValue>';
+  SignedInfo += '</ds:Reference>';
+  SignedInfo += '</ds:SignedInfo>';
+
+  const canonicalized_SignedInfo = SignedInfo.replace(
+    '<ds:SignedInfo',
+    '<ds:SignedInfo ' + namespaces,
+  );
+  const md = forge.md.sha1.create();
+  md.update(canonicalized_SignedInfo, 'utf8');
+
+  const signature = btoa(key.sign(md));
+
+  let xades_bes = '';
+  xades_bes += `<ds:Signature ${namespaces} Id="Signature-${signatureUUID}">`;
+  xades_bes += SignedInfo;
+  xades_bes += `<ds:SignatureValue Id="SignatureValue-${signatureUUID}">`;
+  xades_bes += signature;
+  xades_bes += '</ds:SignatureValue>';
+  xades_bes += KeyInfo;
+  xades_bes += `<ds:Object Id="XadesObjectId-${objectUUID}">`;
+  xades_bes += `<xades:QualifyingProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Id="QualifyingProperties-${qualifyingPropertiesUUID}" Target="#Signature-${signatureUUID}">`;
+  xades_bes += SignedProperties;
+  xades_bes += '</xades:QualifyingProperties>';
+  xades_bes += '</ds:Object>';
+  xades_bes += '</ds:Signature>';
+
+  return xml.replace(/(<[^<]+)$/, xades_bes + '$1');
+}
+
+// ============================================
+// Función principal con detección automática
+// ============================================
+
+async function sign(p12Path, p12Password, xmlIn) {
+  const arrayBuffer = await getP12FromUrl(p12Path);
+  let xml = normalizeXml(xmlIn);
+
+  // Extraer datos del certificado P12
+  const p12Data = extractP12Data(arrayBuffer, p12Password);
+
+  // Detectar proveedor automáticamente
+  const provider = detectProvider(p12Data.friendlyName, p12Data.issuerAttrs);
+
+  // Redirigir a la función de firma correspondiente
+  if (provider === 'UANATACA') {
+    return _signUanataca(xml, p12Data);
+  }
+
+  // Para BANCO_CENTRAL y SECURITY_DATA usar la firma estándar
+  return _signStandard(xml, p12Data, provider);
+}
+
+// Función específica para Uanataca (exportada por compatibilidad)
+async function signUanataca(p12Path, p12Password, xmlIn) {
+  const arrayBuffer = await getP12FromUrl(p12Path);
+  let xml = normalizeXml(xmlIn);
+  const p12Data = extractP12Data(arrayBuffer, p12Password);
+  return _signUanataca(xml, p12Data);
+}
+
+export { sign, signUanataca };
