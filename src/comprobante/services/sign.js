@@ -326,6 +326,9 @@ function detectProvider(friendlyName, issuerAttrs) {
   if (/UANATACA/i.test(issuerString)) {
     return 'UANATACA';
   }
+  if (/LAZZATE/i.test(issuerString)) {
+    return 'LAZZATE';
+  }
 
   return 'SECURITY_DATA';
 }
@@ -658,7 +661,8 @@ function getDate() {
   return date.toISOString().slice(0, 19) + sign + offsetHours + ':' + offsetMinutes;
 }
 
-function _signUanataca(xml, p12Data) {
+// Firma moderna con C14N real (Uanataca, Lazzate, etc.)
+function _signModern(xml, p12Data) {
   const { pkcs8Bags, certificate } = p12Data;
 
   // Para Uanataca usar la primera clave disponible
@@ -746,8 +750,8 @@ async function sign(p12Path, p12Password, xmlIn) {
   const provider = detectProvider(p12Data.friendlyName, p12Data.issuerAttrs);
 
   // Redirigir a la función de firma correspondiente
-  if (provider === 'UANATACA') {
-    return _signUanataca(xml, p12Data);
+  if (provider === 'UANATACA' || provider === 'LAZZATE') {
+    return _signModern(xml, p12Data);
   }
 
   // Para BANCO_CENTRAL y SECURITY_DATA usar la firma estándar
@@ -759,7 +763,15 @@ async function signUanataca(p12Path, p12Password, xmlIn) {
   const arrayBuffer = await getP12FromUrl(p12Path);
   let xml = normalizeXml(xmlIn);
   const p12Data = extractP12Data(arrayBuffer, p12Password);
-  return _signUanataca(xml, p12Data);
+  return _signModern(xml, p12Data);
 }
 
-export { sign, signUanataca };
+// Función específica para Lazzate (exportada por compatibilidad)
+async function signLazzate(p12Path, p12Password, xmlIn) {
+  const arrayBuffer = await getP12FromUrl(p12Path);
+  let xml = normalizeXml(xmlIn);
+  const p12Data = extractP12Data(arrayBuffer, p12Password);
+  return _signModern(xml, p12Data);
+}
+
+export { sign, signUanataca, signLazzate };

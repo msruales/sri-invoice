@@ -5,7 +5,7 @@ import {
     Pago
 } from "./comprobante/core";
 import {NotaCredito} from "./comprobante/core/nota-credito/notaCredito";
-import {documentAuthorization, documentReception, sign, signUanataca} from "./comprobante/services";
+import {documentAuthorization, documentReception, sign, signUanataca, signLazzate} from "./comprobante/services";
 
 export {
     Factura,
@@ -14,6 +14,7 @@ export {
     documentReception,
     sign,
     signUanataca,
+    signLazzate,
     DetalleFactura,
     InfoTributaria,
     Pago,
