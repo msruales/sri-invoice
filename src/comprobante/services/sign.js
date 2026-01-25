@@ -460,8 +460,10 @@ function _signUanataca(xml, p12Data) {
     'utf8',
   );
 
-  const namespaces =
-    'xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:xades="http://uri.etsi.org/01903/v1.3.2#"';
+  // Namespaces separados - como en la firma válida de Uanataca
+  const nsDs = 'xmlns:ds="http://www.w3.org/2000/09/xmldsig#"';
+  const nsXades = 'xmlns:xades="http://uri.etsi.org/01903/v1.3.2#"';
+  const nsBoth = `${nsDs} ${nsXades}`;
 
   // Generar UUIDs para Uanataca
   const signatureUUID = generateUUID();
@@ -512,10 +514,11 @@ function _signUanataca(xml, p12Data) {
   SignedProperties += '</xades:SignedDataObjectProperties>';
   SignedProperties += '</xades:SignedProperties>';
 
+  // Para el hash de SignedProperties, usar ambos namespaces (ds y xades)
   const sha256_SignedProperties = sha256_base64(
     SignedProperties.replace(
       '<xades:SignedProperties',
-      '<xades:SignedProperties ' + namespaces,
+      `<xades:SignedProperties ${nsBoth}`,
     ),
   );
 
@@ -538,8 +541,9 @@ function _signUanataca(xml, p12Data) {
   KeyInfo += '</ds:KeyValue>';
   KeyInfo += '</ds:KeyInfo>';
 
+  // Para el hash de KeyInfo, solo usar xmlns:ds (como en firma válida)
   const sha256_KeyInfo = sha256_base64(
-    KeyInfo.replace('<ds:KeyInfo', '<ds:KeyInfo ' + namespaces),
+    KeyInfo.replace('<ds:KeyInfo', `<ds:KeyInfo ${nsDs}`),
   );
 
   let SignedInfo = '';
@@ -569,24 +573,26 @@ function _signUanataca(xml, p12Data) {
   SignedInfo += '</ds:Reference>';
   SignedInfo += '</ds:SignedInfo>';
 
+  // Para la firma del SignedInfo, solo usar xmlns:ds
   const canonicalized_SignedInfo = SignedInfo.replace(
     '<ds:SignedInfo',
-    '<ds:SignedInfo ' + namespaces,
+    `<ds:SignedInfo ${nsDs}`,
   );
   const md = forge.md.sha1.create();
   md.update(canonicalized_SignedInfo, 'utf8');
 
   const signature = btoa(key.sign(md));
 
+  // Construir la firma final - solo xmlns:ds en Signature (como firma válida)
   let xades_bes = '';
-  xades_bes += `<ds:Signature ${namespaces} Id="Signature-${signatureUUID}">`;
+  xades_bes += `<ds:Signature ${nsDs} Id="Signature-${signatureUUID}">`;
   xades_bes += SignedInfo;
   xades_bes += `<ds:SignatureValue Id="SignatureValue-${signatureUUID}">`;
   xades_bes += signature;
   xades_bes += '</ds:SignatureValue>';
   xades_bes += KeyInfo;
   xades_bes += `<ds:Object Id="XadesObjectId-${objectUUID}">`;
-  xades_bes += `<xades:QualifyingProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Id="QualifyingProperties-${qualifyingPropertiesUUID}" Target="#Signature-${signatureUUID}">`;
+  xades_bes += `<xades:QualifyingProperties ${nsXades} Id="QualifyingProperties-${qualifyingPropertiesUUID}" Target="#Signature-${signatureUUID}">`;
   xades_bes += SignedProperties;
   xades_bes += '</xades:QualifyingProperties>';
   xades_bes += '</ds:Object>';
