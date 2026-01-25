@@ -147,7 +147,7 @@ async function sign(p12Path, p12Password, xmlIn) {
   const certificateX509_asn1 = forge.pki.certificateToAsn1(certificate);
   const certificateX509_der = forge.asn1.toDer(certificateX509_asn1).getBytes();
   const hash_certificateX509_der = sha1_base64(certificateX509_der);
-  const certificateX509_serialNumber = parseInt(certificate.serialNumber, 16);
+  const certificateX509_serialNumber = BigInt('0x' + certificate.serialNumber).toString();
 
   const exponent = hexToBase64(key.e.data[0].toString(16));
   const modules = bigIntToBase64(key.n);
@@ -208,7 +208,7 @@ async function sign(p12Path, p12Password, xmlIn) {
 
   SignedProperties += '<etsi:SignedDataObjectProperties>';
   SignedProperties +=
-    '<etsi:DataObjectFormat ObjectReference="#Reference-ID=' +
+    '<etsi:DataObjectFormat ObjectReference="#Reference-ID-' +
     Reference_ID_number +
     '">';
   SignedProperties += '<etsi:Description>';
