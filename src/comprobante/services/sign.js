@@ -215,7 +215,7 @@ function _signStandard(xml, p12Data, provider) {
   xml = xml.replace(/\t|\r/g, '');
 
   const sha1_xml = sha1_base64(
-    xml.replace('<?xml version="1.0" encoding="UTF-8"?>', ''),
+    xml.replace(/<\?xml[^?]*\?>/i, ''),
     'utf8',
   );
 
@@ -401,6 +401,33 @@ function _signStandard(xml, p12Data, provider) {
 // Lógica de firma para Uanataca
 // ============================================
 
+// Decodifica valores hexadecimales ASN.1 (como el OID 2.5.4.97 de Uanataca)
+function decodeAsn1Value(value) {
+  if (typeof value !== 'string') return value;
+
+  // Si el valor comienza con #, está en formato hexadecimal ASN.1
+  if (value.startsWith('#')) {
+    try {
+      const hex = value.substring(1);
+      // El formato es: tag (1 byte) + length (1+ bytes) + value
+      // Para UTF8String (tag 0x0c), extraemos el valor después del tag y length
+      const tag = parseInt(hex.substring(0, 2), 16);
+      const length = parseInt(hex.substring(2, 4), 16);
+      const valueHex = hex.substring(4);
+
+      // Decodificar el valor hexadecimal a string
+      let decoded = '';
+      for (let i = 0; i < valueHex.length; i += 2) {
+        decoded += String.fromCharCode(parseInt(valueHex.substring(i, i + 2), 16));
+      }
+      return decoded;
+    } catch (e) {
+      return value;
+    }
+  }
+  return value;
+}
+
 function _signUanataca(xml, p12Data) {
   const { pkcs8Bags, cert, issuerAttrs, certificate } = p12Data;
 
@@ -411,13 +438,15 @@ function _signUanataca(xml, p12Data) {
   const key = pkcs8.key ?? pkcs8.asn1;
 
   // Formatear issuerName para Uanataca con OID.2.5.4.97
+  // Decodificar valores hexadecimales si es necesario
   const issuerName = [...issuerAttrs]
     .reverse()
     .map((attr) => {
+      const value = decodeAsn1Value(attr.value);
       if (attr.type === '2.5.4.97') {
-        return `OID.2.5.4.97=${attr.value}`;
+        return `OID.2.5.4.97=${value}`;
       }
-      return `${attr.shortName}=${attr.value}`;
+      return `${attr.shortName}=${value}`;
     })
     .join(', ');
 
@@ -427,7 +456,7 @@ function _signUanataca(xml, p12Data) {
   xml = xml.replace(/\t|\r/g, '');
 
   const sha256_xml = sha256_base64(
-    xml.replace('<?xml version="1.0" encoding="UTF-8"?>', ''),
+    xml.replace(/<\?xml[^?]*\?>/i, ''),
     'utf8',
   );
 
