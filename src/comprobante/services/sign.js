@@ -105,11 +105,18 @@ async function sign(p12Path, p12Password, xmlIn) {
   });
   const issuerAttrs = cert.cert.issuer.attributes;
 
+  // Mapeo de OIDs conocidos que no tienen shortName en node-forge
+  const oidMap = {
+    '2.5.4.97': 'organizationIdentifier', // OID para organizationIdentifier (usado por Uanataca)
+  };
+
   issuerName = issuerAttrs
     .slice() // Copiar para no mutar el original
     .reverse()
     .map((attr) => {
-      return `${attr.shortName}=${attr.value}`;
+      // Usar shortName si existe, sino buscar en el mapa de OIDs, sino usar el OID directamente
+      const name = attr.shortName || oidMap[attr.type] || attr.type;
+      return `${name}=${attr.value}`;
     })
     .join(', ');
 
