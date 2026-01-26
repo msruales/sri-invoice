@@ -32,3 +32,5 @@ coverage/
 # Archivos de logs
 logs/
 *.log
+
+*.p12
