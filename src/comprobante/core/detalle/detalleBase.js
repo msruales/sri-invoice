@@ -60,8 +60,8 @@ var DetalleBase = /** @class */ (function () {
     });
     Object.defineProperty(DetalleBase.prototype, "precioTotalSinImpuesto", {
         get: function () {
-            // Usar cálculo preciso para evitar errores de precisión decimal
-            var subtotal = (0, utils_1.preciseCalculation)(this._precioUnitario * this._cantidad);
+            // Evita doble redondeo: primero calcula bruto y redondea solo al final
+            var subtotal = this._precioUnitario * this._cantidad;
             this._precioTotalSinImpuesto = (0, utils_1.preciseCalculation)(subtotal - this._descuento);
             return this._precioTotalSinImpuesto;
         },

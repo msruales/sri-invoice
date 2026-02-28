@@ -59,8 +59,10 @@ var Factura = /** @class */ (function (_super) {
             return (0, utils_1.preciseCalculation)(acc + Number(pago.total));
         }, 0);
         var importeTotal = (0, utils_1.preciseCalculation)(Number(this.importeTotal));
-        if (importeTotal !== totalPago) {
-            throw new Error("El pago (".concat(totalPago, ") no coincide con el importe total (").concat(importeTotal, ")"));
+        var diferencia = Math.abs(importeTotal - totalPago);
+        var tolerancia = 0.01;
+        if (diferencia > tolerancia) {
+            throw new Error("El pago (".concat(totalPago, ") no coincide con el importe total (").concat(importeTotal, "). Diferencia: ").concat(diferencia.toFixed(4)));
         }
     };
     Factura.prototype.addPago = function (pago) {

@@ -74,7 +74,7 @@ export class Factura extends ComprobanteElectronico {
     const diferencia = Math.abs(importeTotal - totalPago);
     const tolerancia = 0.01;
 
-    if (diferencia >= tolerancia) {
+    if (diferencia > tolerancia) {
       throw new Error(`El pago (${totalPago}) no coincide con el importe total (${importeTotal}). Diferencia: ${diferencia.toFixed(4)}`);
     }
   }

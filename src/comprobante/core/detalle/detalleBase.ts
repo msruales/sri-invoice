@@ -51,8 +51,8 @@ export class DetalleBase {
   }
 
   get precioTotalSinImpuesto(): number {
-    // Usar cálculo preciso para evitar errores de precisión decimal
-    const subtotal = preciseCalculation(this._precioUnitario * this._cantidad);
+    // Evita doble redondeo: primero calcula bruto y redondea solo al final
+    const subtotal = this._precioUnitario * this._cantidad;
     this._precioTotalSinImpuesto = preciseCalculation(subtotal - this._descuento);
     return this._precioTotalSinImpuesto;
   }

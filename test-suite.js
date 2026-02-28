@@ -183,6 +183,43 @@ test('checkPago acepta diferencias dentro de tolerancia', () => {
 });
 
 // ========================================
+// TEST 6.1: Límite exacto de tolerancia
+// ========================================
+test('checkPago acepta diferencia exacta de 0.01', () => {
+  const factura = new Factura({
+    infoTributaria: {
+      ambiente: 1,
+      tipoEmision: 1,
+      razonSocial: 'Test Company',
+      ruc: '1234567890001',
+      dirMatriz: 'Dirección Test',
+      codEstablecimiento: '001',
+      codPtoEmision: '001',
+      secuencial: '000000001'
+    },
+    fechaEmision: '01/01/2024',
+    razonSocialComprador: 'Cliente Test',
+    identificacionComprador: '1234567890',
+    direccionComprador: 'Dirección',
+    tipoIdentificacionComprador: '05'
+  });
+
+  const detalle = new DetalleFactura({
+    descripcion: 'Producto',
+    cantidad: 1,
+    precioUnitario: 10.0,
+    descuento: 0,
+    codigoPrincipal: 'TOL002'
+  });
+  factura.addDetalle(detalle);
+
+  const totalCalculado = Number(factura.importeTotal);
+  factura.addPago({ total: totalCalculado - 0.01, formaPago: '01' });
+
+  factura.checkPago(); // No debería lanzar error
+});
+
+// ========================================
 // TEST 7: checkPago rechaza diferencias grandes
 // ========================================
 test('checkPago rechaza diferencias mayores a tolerancia', () => {
