@@ -329,6 +329,9 @@ function detectProvider(friendlyName, issuerAttrs) {
   if (/LAZZATE/i.test(issuerString)) {
     return 'LAZZATE';
   }
+  if (/ANF/i.test(issuerString)) {
+    return 'ANF';
+  }
 
   return 'SECURITY_DATA';
 }
@@ -750,7 +753,7 @@ async function sign(p12Path, p12Password, xmlIn) {
   const provider = detectProvider(p12Data.friendlyName, p12Data.issuerAttrs);
 
   // Redirigir a la función de firma correspondiente
-  if (provider === 'UANATACA' || provider === 'LAZZATE') {
+  if (provider === 'UANATACA' || provider === 'LAZZATE' || provider === 'ANF') {
     return _signModern(xml, p12Data);
   }
 
@@ -774,4 +777,12 @@ async function signLazzate(p12Path, p12Password, xmlIn) {
   return _signModern(xml, p12Data);
 }
 
-export { sign, signUanataca, signLazzate };
+// Función específica para ANF (exportada por compatibilidad)
+async function signAnf(p12Path, p12Password, xmlIn) {
+  const arrayBuffer = await getP12FromUrl(p12Path);
+  let xml = normalizeXml(xmlIn);
+  const p12Data = extractP12Data(arrayBuffer, p12Password);
+  return _signModern(xml, p12Data);
+}
+
+export { sign, signUanataca, signLazzate, signAnf };
