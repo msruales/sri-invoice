@@ -79,15 +79,12 @@ export class NotaCredito extends ComprobanteElectronico {
     const concatImpuestos = this.concatImpuestos();
 
     const sumaImpuestos = concatImpuestos.reduce(
-      (acc, impuesto) => acc + Number(impuesto.valor),
+      (acc, impuesto) => preciseCalculation(acc + Number(impuesto.valor)),
       0,
     );
 
-    return formatNumber(
-      Number(this.totalSinImpuestos) +
-            sumaImpuestos -
-            Number(this.totalDescuento),
-    );
+    const total = preciseCalculation(Number(this.totalSinImpuestos) + sumaImpuestos);
+    return formatNumber(total);
   }
 
   generateComprobanteXml(): { invoiceXml: string; accessKey: string } {

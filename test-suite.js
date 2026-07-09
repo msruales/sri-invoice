@@ -1,7 +1,9 @@
 // Suite completa de tests para verificar funcionamiento
 const { preciseCalculation, formatNumber } = require('./dist/comprobante/utils/formatNumber');
 const { Factura } = require('./dist/comprobante/core/factura/factura');
+const { NotaCredito } = require('./dist/comprobante/core/nota-credito/notaCredito');
 const { DetalleFactura } = require('./dist/comprobante/core/detalle/detalleFactura');
+const { DetalleNotaCredito } = require('./dist/comprobante/core/detalle/detalleNotaCredito');
 const { Pago } = require('./dist/comprobante/core/pago/pago');
 
 console.log('🧪 === SUITE DE TESTS COMPLETA ===\n');
@@ -348,6 +350,80 @@ test('Factura completa con IVA calcula correctamente totales', () => {
   console.log(`  - Base imponible: $${factura.totalSinImpuestos}`);
   console.log(`  - IVA total: $${preciseCalculation(Number(factura.importeTotal) - Number(factura.totalSinImpuestos))}`);
   console.log(`  - Total final: $${factura.importeTotal}`);
+});
+
+// ========================================
+// TEST 9: Nota de crédito usa la misma base de cálculo que factura
+// ========================================
+test('NotaCredito calcula valorModificacion igual que factura con descuentos e IVA', () => {
+  const infoTributaria = {
+    ambiente: 1,
+    tipoEmision: 1,
+    razonSocial: 'Empresa Test S.A.',
+    ruc: '1234567890001',
+    dirMatriz: 'Av. Principal 123',
+    codEstablecimiento: '001',
+    codPtoEmision: '001',
+    secuencial: '000000002'
+  };
+
+  const factura = new Factura({
+    infoTributaria: {...infoTributaria, secuencial: '000000001'},
+    fechaEmision: '12/01/2024',
+    razonSocialComprador: 'Cliente Premium',
+    identificacionComprador: '0987654321',
+    direccionComprador: 'Calle Secundaria 456',
+    tipoIdentificacionComprador: '05'
+  });
+
+  const notaCredito = new NotaCredito({
+    infoTributaria,
+    fechaEmision: '12/01/2024',
+    dirEstablecimiento: 'Sucursal Centro',
+    razonSocialComprador: 'Cliente Premium',
+    identificacionComprador: '0987654321',
+    tipoIdentificacionComprador: '05',
+    codDocModificado: '01',
+    numDocModificado: '001-001-000000001',
+    fechaEmisionDocSustento: '12/01/2024',
+    motivo: 'Anulación total'
+  });
+
+  const facturaDetalle = new DetalleFactura({
+    descripcion: 'Producto con descuento',
+    cantidad: 3,
+    precioUnitario: 25.99,
+    descuento: 2.97,
+    codigoPrincipal: 'MOU001'
+  });
+  facturaDetalle.addImpuesto(2, 3, 15);
+  factura.addDetalle(facturaDetalle);
+
+  const notaDetalle = new DetalleNotaCredito({
+    descripcion: 'Producto con descuento',
+    cantidad: 3,
+    precioUnitario: 25.99,
+    descuento: 2.97,
+    codigoInterno: 'MOU001'
+  });
+  notaDetalle.addImpuesto(2, 3, 15);
+  notaCredito.addDetalle(notaDetalle);
+
+  const baseEsperada = preciseCalculation(3 * 25.99 - 2.97); // 75.00
+  const ivaEsperado = preciseCalculation(baseEsperada * 0.15); // 11.25
+  const totalEsperado = preciseCalculation(baseEsperada + ivaEsperado); // 86.25
+
+  if (Number(notaCredito.totalSinImpuestos) !== baseEsperada) {
+    throw new Error(`Total sin impuestos esperado ${baseEsperada}, obtenido ${notaCredito.totalSinImpuestos}`);
+  }
+
+  if (Number(factura.importeTotal) !== totalEsperado) {
+    throw new Error(`Importe total factura esperado ${totalEsperado}, obtenido ${factura.importeTotal}`);
+  }
+
+  if (Number(notaCredito.valorModificacion) !== Number(factura.importeTotal)) {
+    throw new Error(`Nota de crédito ${notaCredito.valorModificacion} no coincide con factura ${factura.importeTotal}`);
+  }
 });
 
 // ========================================
